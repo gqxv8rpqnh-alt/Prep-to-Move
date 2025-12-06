@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>The Curator | Moving OS</title>
+    
+    <!-- PWA Settings (Dynamic Manifest is injected via JS below) -->
+    <meta name="theme-color" content="#020617">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Curator">
+    
+    <!-- Cloud Icon (Fixes the "Big C" issue immediately) -->
+    <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/679/679720.png">
+    <link rel="icon" type="image/png" href="https://cdn-icons-png.flaticon.com/512/679/679720.png">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: { slate: { 950: '#020617' } },
+                    fontFamily: { sans: ['Inter', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- QRCode.js Library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+
+    <style>
+        /* Styles.css content merged here */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #020617; }
+        ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #334155; }
+
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in { animation: fadeIn 0.3s ease-out forwards; }
+
+        @keyframes slideUp {
+            from { transform: translateY(100%); }
+            to { transform: translateY(0); }
+        }
+        .animate-slide-up { animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+
+        /* QR Code Container Styling */
+        #qr-item-container img, #qr-box-container img {
+            border-radius: 8px;
+            border: 4px solid white;
+            margin: 0 auto;
+        }
+
+        input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 font-sans h-screen flex flex-col overflow-hidden selection:bg-emerald-500 selection:text-white">
+
+    <div id="toast-container" class="fixed top-4 left-1/2 -translate-x-1/2 z-50 pointer-events-none"></div>
+
+    <!-- Header -->
+    <header class="px-4 py-3 bg-slate-900/80 backdrop-blur-md border-b border-slate-800 flex justify-between items-center z-10 shrink-0">
+        <div class="flex items-center space-x-2 cursor-pointer" onclick="app.resetToDashboard()">
+            <div class="bg-gradient-to-br from-emerald-500 to-teal-600 p-2 rounded-xl shadow-lg shadow-emerald-900/20">
+                <i data-lucide="box" class="w-5 h-5 text-white"></i>
+            </div>
+            <div>
+                <h1 class="font-bold text-slate-100 tracking-wide leading-tight">The Curator</h1>
+                <p class="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Moving OS</p>
+            </div>
+        </div>
+        <div class="flex space-x-1">
+            <button onclick="app.openDataModal()" class="p-2 text-slate-500 hover:text-emerald-400 transition-colors">
+                <i data-lucide="database" class="w-5 h-5"></i>
+            </button>
+            <button onclick="app.openSettingsModal()" class="p-2 text-slate-500 hover:text-emerald-400 transition-colors">
+                <i data-lucide="settings" class="w-5 h-5"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <div class="px-4 pt-4 shrink-0 bg-slate-950 border-b border-transparent">
+        <div class="flex space-x-2 overflow-x-auto pb-2 hide-scrollbar" id="nav-tabs">
+            <!-- Injected via JS -->
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <main id="main-content" class="flex-1 overflow-y-auto p-4 pb-24 scroll-smooth">
+        <!-- Injected via JS -->
+    </main>
+
+    <!-- FAB -->
+    <button id="fab" onclick="app.openItemModal()" class="fixed bottom-6 right-6 bg-emerald-500 text-slate-900 p-4 rounded-2xl shadow-lg shadow-emerald-500/20 hover:scale-105 active:scale-95 transition-all z-40 hidden">
+        <i data-lucide="plus" class="w-6 h-6"></i>
+    </button>
+
+    <!-- Modal Container -->
+    <div id="modal-overlay" class="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-sm hidden flex items-end sm:items-center justify-center p-4"></div>
+
+    <script>
+        /**
+         * THE CURATOR v3 - Combined Logic + Auto URL Detection + Auto Manifest
+         */
+
+        // --- CONFIGURATION ---
+        const APP_BASE_URL = window.location.origin; 
+        const STORAGE_KEY = 'the_curator_v1_data';
+        // Generic box icon for PWA
+        const APP_ICON_URL = "https://cdn-icons-png.flaticon.com/512/679/679720.png";
+
+        // --- Dynamic PWA Manifest Injection (No external file needed!) ---
+        (function injectManifest() {
+            const manifest = {
+                "name": "The Curator",
+                "short_name": "Curator",
+                "start_url": "./index.html",
+                "display": "standalone",
+                "background_color": "#020617",
+                "theme_color": "#020617",
+                "orientation": "portrait",
+                "icons": [
+                    { "src": APP_ICON_URL, "sizes": "192x192", "type": "image/png" },
+                    { "src": APP_ICON_URL, "sizes": "512x512", "type": "image/png" }
+                ]
+            };
+            const stringManifest = JSON.stringify(manifest);
+            const blob = new Blob([stringManifest], {type: 'application/json'});
+            const manifestURL = URL.createObjectURL(blob);
+            const link = document.createElement('link');
+            link.rel = 'manifest';
+            link.href = manifestURL;
+            document.head.appendChild(link);
+        })();
+
+        // --- State ---
+        const state = {
+            items: [],
+            boxes: [],
+            settings: { moveDate: '' },
+            currentView: 'dashboard',
+            filter: 'All',
+            search: '',
+        };
+
+        // --- Helper: Safe History Push (Fixes Preview Crash) ---
+        function safePushState(data, title, url) {
+            try {
+                history.pushState(data, title, url);
+            } catch (e) {
+                console.warn('Routing disabled in this environment (preview mode).');
+            }
+        }
+
+        // --- Initializer & Routing ---
+        document.addEventListener('DOMContentLoaded', () => {
+            loadData();
+            
+            // Routing Logic: Check URL for ?item=ID or ?box=ID
+            const params = new URLSearchParams(window.location.search);
+            const itemId = params.get('item');
+            const boxId = params.get('box');
+
+            renderNav();
+
+            if (itemId) {
+                const item = state.items.find(i => i.id === itemId);
+                if (item) {
+                    state.currentView = 'inventory';
+                    renderView();
+                    app.openItemModal(itemId);
+                } else {
+                    app.showToast("Item not found", "error");
+                    renderView();
+                }
+            } else if (boxId) {
+                const box = state.boxes.find(b => b.id === boxId);
+                if (box) {
+                    state.currentView = 'boxes';
+                    renderView();
+                    app.openBoxModal(boxId);
+                } else {
+                    app.showToast("Box not found", "error");
+                    renderView();
+                }
+            } else {
+                renderView();
+            }
+
+            lucide.createIcons();
+        });
+
+        // --- Persistence ---
+        function loadData() {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                state.items = parsed.items || [];
+                state.boxes = parsed.boxes || [];
+                state.settings = parsed.settings || { moveDate: '' };
+            }
+        }
+
+        function saveData() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                items: state.items,
+                boxes: state.boxes,
+                settings: state.settings
+            }));
+            renderView();
+        }
+
+        // --- Logic Engines ---
+        function generateRoadmap() {
+            if (!state.settings.moveDate) return [];
+            const moveDate = new Date(state.settings.moveDate);
+            const tasks = [];
+            const addTask = (title, daysOut, category, desc) => {
+                const d = new Date(moveDate);
+                d.setDate(d.getDate() - daysOut);
+                tasks.push({ title, date: d.toISOString().split('T')[0], category, desc });
+            };
+
+            addTask("Purge: Books & Papers", 45, "Declutter", "Heavy items are expensive. Be ruthless.");
+            addTask("Pack: Out of Season", 30, "Packing", "Pack winter/summer gear.");
+            if (state.items.some(i => i.status === 'Sell')) addTask("List Sale Items", 21, "Selling", "List items on Marketplace.");
+            addTask("Pack: Essentials Box", 1, "Packing", "Toiletries, chargers for night 1.");
+            
+            return tasks.sort((a,b) => new Date(a.date) - new Date(b.date));
+        }
+
+        function generateRecommendations() {
+            const recs = [];
+            const catCounts = {};
+            state.items.forEach(i => { catCounts[i.category] = (catCounts[i.category] || 0) + 1; });
+
+            Object.keys(catCounts).forEach(cat => {
+                if (catCounts[cat] > 10) recs.push({ reason: 'TooManyInCategory', message: `You have ${catCounts[cat]} items in '${cat}'.`, severity: 'Medium', action: 'Review' });
+            });
+            return recs;
+        }
+
+        // --- UI Rendering ---
+        const mainContent = document.getElementById('main-content');
+        const modalOverlay = document.getElementById('modal-overlay');
+
+        function renderNav() {
+            const tabs = [
+                { id: 'dashboard', label: 'Overview', icon: 'layout-grid' },
+                { id: 'inventory', label: 'Inventory', icon: 'list' },
+                { id: 'boxes', label: 'Boxes', icon: 'package' },
+                { id: 'roadmap', label: 'Roadmap', icon: 'calendar' },
+                { id: 'purge', label: 'Purge', icon: 'sparkles' }
+            ];
+
+            const navHtml = tabs.map(tab => {
+                const isActive = state.currentView === tab.id;
+                const classes = isActive ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'text-slate-500 border-transparent';
+                return `<button onclick="app.setView('${tab.id}')" class="flex items-center px-4 py-2 rounded-full text-xs font-bold uppercase transition-all ${classes}"><i data-lucide="${tab.icon}" class="w-4 h-4 mr-2"></i> ${tab.label}</button>`;
+            }).join('');
+
+            document.getElementById('nav-tabs').innerHTML = navHtml;
+            document.getElementById('fab').style.display = state.currentView === 'inventory' ? 'block' : 'none';
+        }
+
+        function renderView() {
+            renderNav();
+            lucide.createIcons();
+            mainContent.innerHTML = '';
+            
+            if (!window.location.search.includes(state.currentView) && window.location.search !== '') {
+                 // safePushState({}, '', window.location.pathname);
+            }
+
+            switch(state.currentView) {
+                case 'dashboard': renderDashboard(); break;
+                case 'inventory': renderInventory(); break;
+                case 'boxes': renderBoxes(); break;
+                case 'roadmap': renderRoadmap(); break;
+                case 'purge': renderPurge(); break;
+            }
+            lucide.createIcons();
+        }
+
+        function renderDashboard() {
+            const stats = state.items.reduce((acc, i) => {
+                if(i.status === 'Keep') acc.keep++;
+                if(i.status === 'Sell') acc.sellVal += (parseFloat(i.value) || 0);
+                if(parseInt(i.sentimentalScore) >= 4) acc.sentimental++;
+                return acc;
+            }, { keep: 0, sellVal: 0, sentimental: 0 });
+
+            const packedCount = state.items.filter(i => i.boxId).length;
+            const packedPct = stats.keep > 0 ? Math.round((packedCount / stats.keep) * 100) : 0;
+
+            mainContent.innerHTML = `
+                <div class="space-y-6 max-w-lg mx-auto animate-fade-in">
+                    <div class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-3xl p-6 border border-slate-700 shadow-2xl relative overflow-hidden">
+                        <p class="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Packing Progress</p>
+                        <div class="flex items-end space-x-2 mb-4"><span class="text-4xl font-bold text-white">${packedPct}%</span><span class="text-sm text-slate-400 mb-1.5">packed</span></div>
+                        <div class="w-full bg-slate-700 h-2 rounded-full overflow-hidden"><div style="width: ${packedPct}%" class="bg-emerald-500 h-full transition-all duration-1000"></div></div>
+                    </div>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="bg-slate-900 p-4 rounded-2xl border border-slate-800"><i data-lucide="dollar-sign" class="w-5 h-5 text-emerald-400 mb-2"></i><div class="text-2xl font-bold text-white">$${stats.sellVal.toLocaleString()}</div><div class="text-xs text-slate-500 font-bold uppercase">Cash Potential</div></div>
+                        <div class="bg-slate-900 p-4 rounded-2xl border border-slate-800"><i data-lucide="heart" class="w-5 h-5 text-rose-400 mb-2"></i><div class="text-2xl font-bold text-white">${stats.sentimental}</div><div class="text-xs text-slate-500 font-bold uppercase">Sentimental</div></div>
+                    </div>
+                </div>`;
+        }
+
+        function renderInventory() {
+            const s = state.search.toLowerCase();
+            const filtered = state.items.filter(i => (i.name.toLowerCase().includes(s) || i.category.toLowerCase().includes(s)) && (state.filter === 'All' || i.status === state.filter));
+            
+            mainContent.innerHTML = `
+                <div class="space-y-4 max-w-lg mx-auto">
+                    <div class="sticky top-0 bg-slate-950/95 backdrop-blur z-20 pb-2 space-y-3 pt-1">
+                        <div class="relative"><i data-lucide="search" class="absolute left-3 top-2.5 text-slate-500 w-4 h-4"></i><input oninput="app.setSearch(this.value)" value="${state.search}" class="w-full bg-slate-900 border border-slate-800 rounded-xl py-2 pl-9 pr-4 text-sm focus:border-emerald-500 outline-none text-slate-200" placeholder="Search..."></div>
+                        <div class="flex space-x-2 overflow-x-auto hide-scrollbar pb-1">${['All', 'Keep', 'Sell', 'Donate'].map(f => `<button onclick="app.setFilter('${f}')" class="px-3 py-1 rounded-full text-[10px] font-bold border transition-colors ${state.filter === f ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30' : 'bg-slate-900 border-slate-800 text-slate-500'}">${f}</button>`).join('')}</div>
+                    </div>
+                    <div class="space-y-3 pb-20">${filtered.map(item => `
+                        <div onclick="app.openItemModal('${item.id}')" class="bg-slate-900/50 border border-slate-800 p-3 rounded-xl flex items-center gap-3 cursor-pointer hover:bg-slate-800 transition-colors animate-fade-in">
+                            <div class="w-12 h-12 bg-slate-800 rounded-lg flex items-center justify-center shrink-0 overflow-hidden">${item.photo ? `<img src="${item.photo}" class="w-full h-full object-cover opacity-80">` : `<i data-lucide="package" class="w-5 h-5 text-slate-600"></i>`}</div>
+                            <div class="flex-1 min-w-0">
+                                <div class="flex justify-between"><h4 class="font-semibold text-slate-200 truncate">${item.name}</h4>${item.status === 'Sell' ? `<span class="text-xs text-emerald-400 font-mono">$${item.value}</span>` : ''}</div>
+                                <div class="flex items-center gap-2 mt-1"><span class="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded border text-slate-500 border-slate-700 bg-slate-800">${item.status}</span>${item.boxId ? `<span class="text-[9px] text-indigo-400"><i data-lucide="box" class="w-3 h-3 inline"></i> Boxed</span>` : ''}</div>
+                            </div>
+                        </div>`).join('')}
+                    </div>
+                </div>`;
+        }
+
+        function renderBoxes() {
+            mainContent.innerHTML = `
+                <div class="space-y-6 max-w-lg mx-auto">
+                    <div class="flex justify-between items-center"><h2 class="text-lg font-bold text-slate-200">Packing Stations</h2><button onclick="app.openBoxModal()" class="bg-emerald-500 text-slate-900 text-xs font-bold px-3 py-2 rounded-lg flex items-center"><i data-lucide="plus" class="w-4 h-4 mr-1"></i> New Box</button></div>
+                    <div class="grid grid-cols-1 gap-4">${state.boxes.length === 0 ? `<div class="text-center py-10 border-2 border-dashed border-slate-800 rounded-xl text-slate-500 text-sm">No boxes yet.</div>` : state.boxes.map(box => `
+                        <div onclick="app.openBoxModal('${box.id}')" class="bg-slate-900 border border-slate-800 rounded-xl p-4 cursor-pointer hover:border-emerald-500/30 transition-all animate-fade-in">
+                            <div class="flex justify-between items-start mb-3"><div class="flex items-center"><i data-lucide="package" class="w-10 h-10 text-slate-700 bg-slate-800 p-2 rounded-lg mr-3"></i><div><h3 class="font-bold text-slate-200">${box.label}</h3><p class="text-xs text-slate-500">${box.destinationRoom}</p></div></div><i data-lucide="qr-code" class="w-5 h-5 text-slate-600"></i></div>
+                            <div class="flex justify-between text-xs bg-slate-950/50 p-2 rounded-lg border border-slate-800/50"><span class="text-slate-400">${state.items.filter(i => i.boxId === box.id).length} items</span>${box.isFragile ? `<span class="text-rose-400 font-bold flex items-center"><i data-lucide="alert-triangle" class="w-3 h-3 mr-1"></i> FRAGILE</span>` : ''}</div>
+                        </div>`).join('')}</div>
+                </div>`;
+        }
+
+        function renderRoadmap() {
+            if (!state.settings.moveDate) {
+                mainContent.innerHTML = `<div class="flex flex-col items-center justify-center h-[60vh] text-center px-6 animate-fade-in"><i data-lucide="calendar" class="w-16 h-16 text-slate-700 mb-4"></i><h2 class="text-xl font-bold text-slate-200 mb-2">When are you moving?</h2><p class="text-slate-400 text-sm mb-6">Set your date to generate a custom timeline.</p><button onclick="app.openSettingsModal()" class="bg-emerald-500 text-slate-900 font-bold px-6 py-3 rounded-xl hover:scale-105 transition-transform">Set Move Date</button></div>`;
+                return;
+            }
+            const tasks = generateRoadmap();
+            mainContent.innerHTML = `<div class="max-w-lg mx-auto space-y-6"><div class="flex justify-between items-end border-b border-slate-800 pb-4"><div><h2 class="text-lg font-bold text-slate-200">Moving Roadmap</h2><p class="text-xs text-emerald-400">Target: ${state.settings.moveDate}</p></div><button onclick="app.openSettingsModal()" class="text-xs text-slate-500 hover:text-slate-300">Edit Date</button></div><div class="space-y-4">${tasks.map((task,idx) => `<div class="relative pl-6 border-l-2 border-slate-800 pb-6 last:pb-0 animate-fade-in" style="animation-delay:${idx*0.1}s"><div class="absolute -left-[9px] top-0 w-4 h-4 rounded-full border-2 border-slate-950 bg-slate-700"></div><div class="bg-slate-900 border border-slate-800 p-4 rounded-xl"><div class="flex justify-between items-start mb-2"><h3 class="font-bold text-slate-200 text-sm">${task.title}</h3><span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded">${task.date}</span></div><p class="text-xs text-slate-400 leading-relaxed">${task.desc}</p></div></div>`).join('')}</div></div>`;
+        }
+
+        function renderPurge() {
+            const recs = generateRecommendations();
+            mainContent.innerHTML = `<div class="max-w-lg mx-auto space-y-6"><div class="bg-rose-500/10 border border-rose-500/20 p-5 rounded-2xl"><h2 class="text-lg font-bold text-rose-400 mb-2 flex items-center"><i data-lucide="sparkles" class="w-5 h-5 mr-2"></i> Declutter Engine</h2><p class="text-sm text-rose-200/80">Analyzed ${state.items.length} items. Found ${recs.length} opportunities.</p></div><div class="space-y-4">${recs.map(rec => `<div class="bg-slate-900 border border-slate-800 p-4 rounded-xl animate-fade-in"><div class="flex justify-between items-start mb-2"><span class="text-[10px] font-bold text-rose-400 uppercase tracking-wider border border-rose-500/30 px-1.5 rounded">${rec.reason}</span><span class="text-[10px] text-slate-500">${rec.severity} Impact</span></div><p class="text-sm text-slate-300 mb-4">${rec.message}</p></div>`).join('')}</div></div>`;
+        }
+
+        // --- Global Interface & Modals ---
+        function generateQR(elementId, text) {
+            document.getElementById(elementId).innerHTML = ""; 
+            new QRCode(document.getElementById(elementId), {
+                text: text, width: 128, height: 128, colorDark : "#000000", colorLight : "#ffffff", correctLevel : QRCode.CorrectLevel.H
+            });
+        }
+
+        function showModal(content) {
+            modalOverlay.innerHTML = content;
+            modalOverlay.classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        window.app = {
+            setView: (id) => { 
+                state.currentView = id; 
+                safePushState({}, '', '/'); 
+                renderView(); 
+            },
+            resetToDashboard: () => {
+                state.currentView = 'dashboard';
+                safePushState({}, '', '/');
+                renderView();
+            },
+            setFilter: (f) => { state.filter = f; renderInventory(); },
+            setSearch: (s) => { state.search = s; renderInventory(); },
+            
+            openItemModal: (id) => {
+                const item = id ? state.items.find(i => i.id === id) : { 
+                    id: Date.now().toString(), name: '', status: 'Keep', category: 'General', value: 0, boxId: '' 
+                };
+                const itemUrl = `${APP_BASE_URL}?item=${item.id}`;
+                const boxOptions = state.boxes.map(b => `<option value="${b.id}" ${item.boxId === b.id ? 'selected' : ''}>${b.label}</option>`).join('');
+                
+                const html = `
+                    <div class="bg-slate-900 w-full max-w-md rounded-2xl border border-slate-800 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col animate-slide-up" onclick="event.stopPropagation()">
+                        <div class="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900">
+                            <h3 class="font-bold text-slate-100">${id ? 'Edit Item' : 'New Item'}</h3>
+                            <button onclick="document.getElementById('modal-overlay').classList.add('hidden'); app.clearUrl();"><i data-lucide="x" class="w-5 h-5 text-slate-500"></i></button>
+                        </div>
+                        <div class="p-6 space-y-5 overflow-y-auto">
+                            ${id ? `<div class="flex flex-col items-center justify-center p-4 bg-white rounded-xl mb-4"><div id="qr-item-container"></div><p class="text-[10px] text-slate-500 mt-2 font-mono break-all text-center">${itemUrl}</p></div>` : ''}
+                            <input id="item-name" value="${item.name}" class="w-full bg-slate-950 border-b border-slate-700 py-2 text-lg font-bold text-slate-100 placeholder-slate-700" placeholder="Item Name">
+                            <div class="grid grid-cols-3 gap-2">${['Keep','Sell','Donate'].map(s => `<button onclick="this.parentNode.querySelectorAll('button').forEach(b=>b.classList.remove('ring-2','ring-emerald-500')); this.classList.add('ring-2','ring-emerald-500'); document.getElementById('item-status').value='${s}'" class="py-2 rounded-lg text-xs font-bold bg-slate-950 border border-slate-800 text-slate-500 ${item.status === s ? 'ring-2 ring-emerald-500' : ''}">${s}</button>`).join('')}</div>
+                            <input type="hidden" id="item-status" value="${item.status}">
+                            <div class="grid grid-cols-2 gap-4">
+                                <div><label class="text-[10px] text-emerald-500 font-bold uppercase">Value</label><input type="number" id="item-value" value="${item.value}" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-200"></div>
+                                <div><label class="text-[10px] text-indigo-400 font-bold uppercase">Box</label><select id="item-box" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-200"><option value="">Unpacked</option>${boxOptions}</select></div>
+                            </div>
+                        </div>
+                        <div class="p-4 border-t border-slate-800 bg-slate-900 flex gap-3">
+                            ${id ? `<button onclick="app.deleteItem('${item.id}')" class="p-3 bg-slate-800 text-rose-500 rounded-xl"><i data-lucide="trash-2" class="w-5 h-5"></i></button>` : ''}
+                            <button onclick="app.saveItem('${item.id}')" class="flex-1 bg-emerald-500 text-slate-900 font-bold py-3 rounded-xl">Save</button>
+                        </div>
+                    </div>`;
+                showModal(html);
+                if(id) generateQR('qr-item-container', itemUrl);
+            },
+
+            saveItem: (id) => {
+                const newItem = {
+                    id: id,
+                    name: document.getElementById('item-name').value,
+                    status: document.getElementById('item-status').value,
+                    value: document.getElementById('item-value').value,
+                    boxId: document.getElementById('item-box').value,
+                    category: 'General', sentimentalScore: 0, createdAt: Date.now()
+                };
+                const idx = state.items.findIndex(i => i.id === id);
+                if (idx > -1) state.items[idx] = { ...state.items[idx], ...newItem };
+                else state.items.unshift(newItem);
+                saveData();
+                document.getElementById('modal-overlay').classList.add('hidden');
+                safePushState({}, '', '/');
+            },
+
+            deleteItem: (id) => {
+                if(confirm("Delete item?")) {
+                    state.items = state.items.filter(i => i.id !== id);
+                    saveData();
+                    document.getElementById('modal-overlay').classList.add('hidden');
+                    safePushState({}, '', '/');
+                }
+            },
+
+            openBoxModal: (id) => {
+                const box = id ? state.boxes.find(b => b.id === id) : { id: Date.now().toString(), label: '', destinationRoom: 'Living Room', status: 'NotStarted' };
+                const boxUrl = `${APP_BASE_URL}?box=${box.id}`;
+                const html = `
+                    <div class="bg-slate-900 w-full max-w-md rounded-2xl border border-slate-800 shadow-2xl p-6 space-y-5 animate-slide-up" onclick="event.stopPropagation()">
+                        <h3 class="font-bold text-slate-100 mb-4">${id ? 'Edit Box' : 'New Box'}</h3>
+                        ${id ? `<div class="flex justify-center py-4 bg-white rounded-xl mb-4"><div id="qr-box-container"></div></div><p class="text-[10px] text-slate-500 text-center font-mono">${boxUrl}</p>` : ''}
+                        <input id="box-label" value="${box.label}" placeholder="Label" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-200">
+                        <button onclick="app.saveBox('${box.id}')" class="w-full bg-emerald-500 text-slate-900 font-bold py-3 rounded-xl mt-4">Save Box</button>
+                    </div>`;
+                showModal(html);
+                if(id) generateQR('qr-box-container', boxUrl);
+            },
+
+            saveBox: (id) => {
+                const newBox = {
+                    id: id,
+                    label: document.getElementById('box-label').value,
+                    destinationRoom: 'General', status: 'NotStarted'
+                };
+                const idx = state.boxes.findIndex(b => b.id === id);
+                if (idx > -1) state.boxes[idx] = { ...state.boxes[idx], ...newBox };
+                else state.boxes.push(newBox);
+                saveData();
+                document.getElementById('modal-overlay').classList.add('hidden');
+                safePushState({}, '', '/');
+            },
+
+            openSettingsModal: () => {
+                const html = `<div class="bg-slate-900 w-full max-w-sm rounded-2xl border border-slate-800 p-6 animate-slide-up" onclick="event.stopPropagation()"><h3 class="font-bold text-slate-100 mb-4">Settings</h3><label class="text-[10px] font-bold text-slate-500 uppercase block mb-2">Move Date</label><input id="move-date" type="date" value="${state.settings.moveDate}" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-3 text-slate-200 mb-6"><button onclick="state.settings.moveDate = document.getElementById('move-date').value; saveData(); document.getElementById('modal-overlay').classList.add('hidden');" class="w-full bg-emerald-500 text-slate-900 font-bold py-3 rounded-xl">Save</button></div>`;
+                showModal(html);
+            },
+
+            openDataModal: () => {
+                // Simplified for the single file view
+                const csv = ['Name,Status'].concat(state.items.map(i => `${i.name},${i.status}`)).join('\n');
+                const html = `<div class="bg-slate-900 w-full max-w-lg rounded-2xl border border-slate-800 p-6 animate-slide-up" onclick="event.stopPropagation()"><h3 class="font-bold text-slate-100 mb-4">Data</h3><div class="space-y-4"><button onclick="navigator.clipboard.writeText(\`${csv}\`); app.showToast('Copied')" class="w-full py-3 bg-slate-800 text-slate-300 font-bold rounded-xl border border-slate-700">Copy CSV</button></div></div>`;
+                showModal(html);
+            },
+            
+            showToast: (msg, type='success') => {
+                const t = document.getElementById('toast-container');
+                const el = document.createElement('div');
+                el.className = `px-4 py-2 rounded-full shadow-xl flex items-center text-sm mb-2 animate-fade-in ${type === 'error' ? 'bg-rose-900 text-rose-100 border border-rose-500' : 'bg-emerald-900 text-emerald-100 border border-emerald-500'}`;
+                el.innerHTML = msg;
+                t.appendChild(el);
+                setTimeout(() => el.remove(), 3000);
+            },
+
+            clearUrl: () => {
+                safePushState({}, '', '/');
+            }
+        };
+
+        modalOverlay.addEventListener('click', () => {
+            modalOverlay.classList.add('hidden');
+            safePushState({}, '', '/');
+        });
+    </script>
+</body>
+</html>
