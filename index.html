@@ -111,7 +111,7 @@
 
     <script>
         /**
-         * THE CURATOR v3.2 - Interactive Dashboard + Sentimental Filter
+         * THE CURATOR v3.7 - Heart Toggle Fix
          */
 
         const APP_BASE_URL = window.location.origin; 
@@ -206,6 +206,12 @@
         function renderDashboard() {
             const stats = state.items.reduce((a, i) => { if(i.status==='Keep')a.k++; if(i.status==='Sell')a.sv+=(parseFloat(i.value)||0); if(parseInt(i.sentimentalScore)>=4)a.s++; return a; }, {k:0,sv:0,s:0});
             const pct = stats.k > 0 ? Math.round((state.items.filter(i=>i.boxId).length / stats.k) * 100) : 0;
+            
+            const catCounts = {};
+            state.items.forEach(i => catCounts[i.category] = (catCounts[i.category] || 0) + 1);
+            const topCats = Object.entries(catCounts).sort(([,a], [,b]) => b - a).slice(0, 4);
+            const totalItems = state.items.length || 1;
+
             mainContent.innerHTML = `
             <div class="space-y-6 max-w-lg mx-auto animate-fade-in">
                 <div class="bg-gradient-to-br from-slate-800 to-slate-900 rounded-3xl p-6 border border-slate-700 shadow-2xl relative overflow-hidden">
@@ -217,6 +223,15 @@
                     <div onclick="app.setFilter('Sell'); app.setView('inventory')" class="bg-slate-900 p-4 rounded-2xl border border-slate-800 cursor-pointer hover:bg-slate-800 transition-colors group"><i data-lucide="dollar-sign" class="w-5 h-5 text-emerald-400 mb-2 group-hover:scale-110 transition-transform"></i><div class="text-2xl font-bold text-white">$${stats.sv.toLocaleString()}</div><div class="text-xs text-slate-500 font-bold uppercase group-hover:text-emerald-400 transition-colors">Cash Potential</div></div>
                     <div onclick="app.setFilter('Sentimental'); app.setView('inventory')" class="bg-slate-900 p-4 rounded-2xl border border-slate-800 cursor-pointer hover:bg-slate-800 transition-colors group"><i data-lucide="heart" class="w-5 h-5 text-rose-400 mb-2 group-hover:scale-110 transition-transform"></i><div class="text-2xl font-bold text-white">${stats.s}</div><div class="text-xs text-slate-500 font-bold uppercase group-hover:text-rose-400 transition-colors">Sentimental</div></div>
                 </div>
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5">
+                    <h3 class="font-bold text-slate-200 mb-4 flex items-center"><i data-lucide="pie-chart" class="w-4 h-4 mr-2 text-indigo-400"></i> Collection Breakdown</h3>
+                    <div class="space-y-3">
+                        ${topCats.length === 0 ? '<p class="text-slate-500 text-xs italic">Add items to see breakdown</p>' : topCats.map(([cat, count]) => {
+                            const percent = Math.round((count / totalItems) * 100);
+                            return `<div><div class="flex justify-between text-xs mb-1"><span class="text-slate-300 font-medium">${cat}</span><span class="text-slate-500">${count} items (${percent}%)</span></div><div class="w-full bg-slate-800 h-1.5 rounded-full overflow-hidden"><div style="width: ${percent}%" class="bg-indigo-500/80 h-full rounded-full"></div></div></div>`;
+                        }).join('')}
+                    </div>
+                </div>
             </div>`;
         }
 
@@ -224,14 +239,11 @@
             const s = state.search.toLowerCase();
             const list = state.items.filter(i => {
                 const matchSearch = (i.name.toLowerCase().includes(s) || i.category.toLowerCase().includes(s));
-                
-                // Specific Filter Logic
                 if (state.filter === 'All') return matchSearch;
                 if (state.filter === 'Sentimental') return matchSearch && parseInt(i.sentimentalScore) >= 4;
                 return matchSearch && i.status === state.filter;
             });
 
-            // Added 'Sentimental' to the filter chips list
             mainContent.innerHTML = `
             <div class="space-y-4 max-w-lg mx-auto">
                 <div class="sticky top-0 bg-slate-950/95 backdrop-blur z-20 pb-2 space-y-3 pt-1">
@@ -245,8 +257,9 @@
                             <div class="flex justify-between"><h4 class="font-semibold text-slate-200 truncate">${i.name}</h4>${i.status==='Sell'?`<span class="text-xs text-emerald-400 font-mono">$${i.value}</span>`:''}</div>
                             <div class="flex items-center gap-2 mt-1"><span class="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded border text-slate-500 border-slate-700 bg-slate-800">${i.status}</span>${i.boxId?`<span class="text-[9px] text-indigo-400"><i data-lucide="box" class="w-3 h-3 inline"></i> Boxed</span>`:''}</div>
                         </div>
+                        ${parseInt(i.sentimentalScore) >= 4 ? `<div class="bg-rose-500/20 p-1.5 rounded-full"><i data-lucide="heart" class="w-3 h-3 text-rose-400 fill-rose-400"></i></div>` : ''}
                     </div>`).join('')}
-                    ${list.length === 0 ? `<div class="text-center py-10 text-slate-500 text-sm">No items found for "${state.filter}"</div>` : ''}
+                    ${list.length === 0 ? `<div class="text-center py-10 text-slate-500 text-sm">No items found</div>` : ''}
                 </div>
             </div>`;
         }
@@ -257,12 +270,45 @@
 
         function renderRoadmap() {
             if (!state.settings.moveDate) { mainContent.innerHTML = `<div class="flex flex-col items-center justify-center h-[60vh] text-center px-6"><h2 class="text-xl font-bold text-slate-200">No Date Set</h2><button onclick="app.openSettingsModal()" class="mt-4 bg-emerald-500 text-slate-900 font-bold px-6 py-3 rounded-xl">Set Move Date</button></div>`; return; }
-            mainContent.innerHTML = `<div class="max-w-lg mx-auto space-y-6"><h2 class="text-lg font-bold text-slate-200">Moving Roadmap</h2><div class="bg-slate-900 border border-slate-800 p-4 rounded-xl text-sm text-slate-400">Tasks would appear here based on ${state.settings.moveDate}</div></div>`;
+            const moveDate = new Date(state.settings.moveDate);
+            if (isNaN(moveDate.getTime())) { mainContent.innerHTML = `<div class="flex flex-col items-center justify-center h-[60vh] text-center px-6"><h2 class="text-xl font-bold text-rose-400">Invalid Date</h2><button onclick="app.openSettingsModal()" class="mt-4 bg-emerald-500 text-slate-900 font-bold px-6 py-3 rounded-xl">Reset Date</button></div>`; return; }
+            const tasks = generateRoadmap();
+            mainContent.innerHTML = `<div class="max-w-lg mx-auto space-y-6"><div class="flex justify-between items-end border-b border-slate-800 pb-4"><div><h2 class="text-lg font-bold text-slate-200">Moving Roadmap</h2><p class="text-xs text-emerald-400">Target: ${state.settings.moveDate}</p></div><button onclick="app.openSettingsModal()" class="text-xs text-slate-500 hover:text-slate-300">Edit Date</button></div><div class="space-y-4">${tasks.map((task,idx) => `<div class="relative pl-6 border-l-2 border-slate-800 pb-6 last:pb-0 animate-fade-in" style="animation-delay:${idx*0.1}s"><div class="absolute -left-[9px] top-0 w-4 h-4 rounded-full border-2 border-slate-950 bg-slate-700"></div><div class="bg-slate-900 border border-slate-800 p-4 rounded-xl"><div class="flex justify-between items-start mb-2"><h3 class="font-bold text-slate-200 text-sm">${task.title}</h3><span class="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded">${task.date}</span></div><p class="text-xs text-slate-400 leading-relaxed">${task.desc}</p></div></div>`).join('')}</div></div>`;
         }
 
         function renderPurge() {
             const recs = generateRecommendations();
-            mainContent.innerHTML = `<div class="max-w-lg mx-auto space-y-6"><div class="bg-rose-500/10 border border-rose-500/20 p-5 rounded-2xl"><h2 class="text-lg font-bold text-rose-400">Declutter Engine</h2><p class="text-sm text-rose-200/80">Suggestions based on your inventory.</p></div></div>`;
+            mainContent.innerHTML = `<div class="max-w-lg mx-auto space-y-6"><div class="bg-rose-500/10 border border-rose-500/20 p-5 rounded-2xl"><h2 class="text-lg font-bold text-rose-400">Declutter Engine</h2><p class="text-sm text-rose-200/80">Suggestions based on your inventory.</p></div><div class="space-y-4">${recs.map(rec => `<div class="bg-slate-900 border border-slate-800 p-4 rounded-xl animate-fade-in"><div class="flex justify-between items-start mb-2"><span class="text-[10px] font-bold text-rose-400 uppercase tracking-wider border border-rose-500/30 px-1.5 rounded">${rec.reason}</span><span class="text-[10px] text-slate-500">${rec.severity} Impact</span></div><p class="text-sm text-slate-300 mb-4">${rec.message}</p></div>`).join('')}</div></div>`;
+        }
+
+        // --- Logic Engines ---
+        function generateRoadmap() {
+            if (!state.settings.moveDate) return [];
+            const moveDate = new Date(state.settings.moveDate);
+            if (isNaN(moveDate.getTime())) return [];
+            const tasks = [];
+            const addTask = (title, daysOut, category, desc) => {
+                try {
+                    const d = new Date(moveDate);
+                    d.setDate(d.getDate() - daysOut);
+                    tasks.push({ title, date: d.toISOString().split('T')[0], category, desc });
+                } catch(e) { console.warn("Date error", e); }
+            };
+            addTask("Purge: Books & Papers", 45, "Declutter", "Heavy items are expensive. Be ruthless.");
+            addTask("Pack: Out of Season", 30, "Packing", "Pack winter/summer gear.");
+            if (state.items.some(i => i.status === 'Sell')) addTask("List Sale Items", 21, "Selling", "List items on Marketplace.");
+            addTask("Pack: Essentials Box", 1, "Packing", "Toiletries, chargers for night 1.");
+            return tasks.sort((a,b) => new Date(a.date) - new Date(b.date));
+        }
+
+        function generateRecommendations() {
+            const recs = [];
+            const catCounts = {};
+            state.items.forEach(i => { catCounts[i.category] = (catCounts[i.category] || 0) + 1; });
+            Object.keys(catCounts).forEach(cat => {
+                if (catCounts[cat] > 10) recs.push({ reason: 'TooManyInCategory', message: `You have ${catCounts[cat]} items in '${cat}'.`, severity: 'Medium', action: 'Review' });
+            });
+            return recs;
         }
 
         // --- App Interface ---
@@ -275,15 +321,85 @@
             setFilter: (f) => { state.filter = f; renderInventory(); },
             setSearch: (s) => { state.search = s; renderInventory(); },
             
+            // FIXED: Sentiment Toggle Logic
+            setSentiment: (score) => {
+                const input = document.getElementById('item-sentiment');
+                const currentScore = parseInt(input.value);
+                
+                // Toggle logic: If clicking the rating that is already selected, clear it (set to 0)
+                const newScore = currentScore === score ? 0 : score;
+                
+                input.value = newScore;
+                
+                const container = document.getElementById('sentiment-container');
+                const buttons = container.querySelectorAll('button');
+                
+                buttons.forEach((btn, idx) => {
+                    const icon = btn.querySelector('svg');
+                    // Score is 1-based, index is 0-based
+                    if (idx < newScore) {
+                        icon.classList.add('text-rose-500', 'fill-rose-500');
+                        icon.classList.remove('text-slate-700');
+                    } else {
+                        icon.classList.remove('text-rose-500', 'fill-rose-500');
+                        icon.classList.add('text-slate-700');
+                    }
+                });
+            },
+
             openItemModal: (id) => {
-                const i = id ? state.items.find(x => x.id === id) : { id: Date.now().toString(), name: '', status: 'Keep', category: 'General', value: 0, boxId: '' };
+                const i = id ? state.items.find(x => x.id === id) : { id: Date.now().toString(), name: '', status: 'Keep', category: 'General', value: 0, boxId: '', sentimentalScore: 0 };
                 const url = `${APP_BASE_URL}?item=${i.id}`;
                 const opts = state.boxes.map(b => `<option value="${b.id}" ${i.boxId===b.id?'selected':''}>${b.label}</option>`).join('');
-                showModal(`<div class="bg-slate-900 w-full max-w-md rounded-2xl border border-slate-800 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col animate-slide-up" onclick="event.stopPropagation()"><div class="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900"><h3 class="font-bold text-slate-100">${id?'Edit':'New'} Item</h3><button onclick="document.getElementById('modal-overlay').classList.add('hidden'); app.clearUrl()"><i data-lucide="x" class="w-5 h-5 text-slate-500"></i></button></div><div class="p-6 space-y-5 overflow-y-auto">${id?`<div class="flex flex-col items-center justify-center p-4 bg-white rounded-xl mb-4"><div id="qr-item-container"></div></div>`:''}<input id="item-name" value="${i.name}" class="w-full bg-slate-950 border-b border-slate-700 py-2 text-lg font-bold text-slate-100 placeholder-slate-700" placeholder="Name"><div class="grid grid-cols-3 gap-2">${['Keep','Sell','Donate'].map(s => `<button onclick="document.getElementById('item-status').value='${s}'; this.parentNode.querySelectorAll('button').forEach(b=>b.classList.remove('ring-2','ring-emerald-500')); this.classList.add('ring-2','ring-emerald-500')" class="py-2 rounded-lg text-xs font-bold bg-slate-950 border border-slate-800 text-slate-500 ${i.status===s?'ring-2 ring-emerald-500':''}">${s}</button>`).join('')}</div><input type="hidden" id="item-status" value="${i.status}"><div class="grid grid-cols-2 gap-4"><div><label class="text-[10px] text-emerald-500 font-bold uppercase">Value</label><input type="number" id="item-value" value="${i.value}" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-200"></div><div><label class="text-[10px] text-indigo-400 font-bold uppercase">Box</label><select id="item-box" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-200"><option value="">Unpacked</option>${opts}</select></div></div></div><div class="p-4 border-t border-slate-800 bg-slate-900 flex gap-3">${id?`<button onclick="app.deleteItem('${i.id}')" class="p-3 bg-slate-800 text-rose-500 rounded-xl"><i data-lucide="trash-2" class="w-5 h-5"></i></button>`:''}<button onclick="app.saveItem('${i.id}')" class="flex-1 bg-emerald-500 text-slate-900 font-bold py-3 rounded-xl">Save</button></div></div>`);
+                
+                const currentScore = parseInt(i.sentimentalScore) || 0;
+                
+                // Render hearts with correct initial state
+                const hearts = [1,2,3,4,5].map(n => {
+                    const active = currentScore >= n;
+                    return `<button type="button" onclick="app.setSentiment(${n})" class="focus:outline-none p-1 transform transition hover:scale-110 active:scale-95"><i data-lucide="heart" class="w-8 h-8 transition-all duration-200 ${active ? 'text-rose-500 fill-rose-500' : 'text-slate-700'}"></i></button>`;
+                }).join('');
+
+                showModal(`
+                    <div class="bg-slate-900 w-full max-w-md rounded-2xl border border-slate-800 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col animate-slide-up" onclick="event.stopPropagation()">
+                        <div class="p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900"><h3 class="font-bold text-slate-100">${id?'Edit':'New'} Item</h3><button onclick="document.getElementById('modal-overlay').classList.add('hidden'); app.clearUrl()"><i data-lucide="x" class="w-5 h-5 text-slate-500"></i></button></div>
+                        <div class="p-6 space-y-5 overflow-y-auto">
+                            ${id?`<div class="flex flex-col items-center justify-center p-4 bg-white rounded-xl mb-4"><div id="qr-item-container"></div><p class="text-[10px] text-slate-500 mt-2 font-mono break-all text-center">${url}</p></div>`:''}
+                            <input id="item-name" value="${i.name}" class="w-full bg-slate-950 border-b border-slate-700 py-2 text-lg font-bold text-slate-100 placeholder-slate-700" placeholder="Name">
+                            
+                            <!-- Status -->
+                            <div class="grid grid-cols-3 gap-2">${['Keep','Sell','Donate'].map(s => `<button onclick="document.getElementById('item-status').value='${s}'; this.parentNode.querySelectorAll('button').forEach(b=>b.classList.remove('ring-2','ring-emerald-500')); this.classList.add('ring-2','ring-emerald-500')" class="py-2 rounded-lg text-xs font-bold bg-slate-950 border border-slate-800 text-slate-500 ${i.status===s?'ring-2 ring-emerald-500':''}">${s}</button>`).join('')}</div>
+                            <input type="hidden" id="item-status" value="${i.status}">
+                            
+                            <!-- Sentiment Container -->
+                            <div>
+                                <label class="text-[10px] text-rose-400 font-bold uppercase mb-2 block">Sentimental Value</label>
+                                <div id="sentiment-container" class="flex gap-3 justify-center py-2 bg-slate-950/50 rounded-xl border border-slate-800/50">${hearts}</div>
+                                <input type="hidden" id="item-sentiment" value="${currentScore}">
+                            </div>
+
+                            <div class="grid grid-cols-2 gap-4">
+                                <div><label class="text-[10px] text-emerald-500 font-bold uppercase">Value</label><input type="number" id="item-value" value="${i.value}" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-200"></div>
+                                <div><label class="text-[10px] text-indigo-400 font-bold uppercase">Box</label><select id="item-box" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-200"><option value="">Unpacked</option>${opts}</select></div>
+                            </div>
+                            
+                            <div><label class="text-[10px] text-slate-500 font-bold uppercase">Category</label><select id="item-category" class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-slate-200">${['General','Kitchen','Clothes','Electronics','Books','Decor'].map(c=>`<option value="${c}" ${i.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
+                        </div>
+                        <div class="p-4 border-t border-slate-800 bg-slate-900 flex gap-3">${id?`<button onclick="app.deleteItem('${i.id}')" class="p-3 bg-slate-800 text-rose-500 rounded-xl"><i data-lucide="trash-2" class="w-5 h-5"></i></button>`:''}<button onclick="app.saveItem('${i.id}')" class="flex-1 bg-emerald-500 text-slate-900 font-bold py-3 rounded-xl">Save</button></div>
+                    </div>`);
                 if(id) generateQR('qr-item-container', url);
             },
             saveItem: (id) => {
-                const n = { id: id, name: document.getElementById('item-name').value, status: document.getElementById('item-status').value, value: document.getElementById('item-value').value, boxId: document.getElementById('item-box').value, category: 'General', sentimentalScore: 0, createdAt: Date.now() };
+                const n = { 
+                    id: id, 
+                    name: document.getElementById('item-name').value, 
+                    status: document.getElementById('item-status').value, 
+                    value: document.getElementById('item-value').value, 
+                    boxId: document.getElementById('item-box').value, 
+                    category: document.getElementById('item-category').value,
+                    sentimentalScore: document.getElementById('item-sentiment').value || 0, // Catch the sentiment
+                    createdAt: Date.now() 
+                };
                 const idx = state.items.findIndex(x => x.id === id); if(idx>-1) state.items[idx] = {...state.items[idx], ...n}; else state.items.unshift(n);
                 saveData(); document.getElementById('modal-overlay').classList.add('hidden'); safePushState({}, '', '/');
             },
